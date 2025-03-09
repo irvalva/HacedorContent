@@ -81,6 +81,27 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         guardar_config(config)
         await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu para otras opciones.")
 
+    elif "esperando_post_tema" in context.user_data:
+        tipo_post = context.user_data["tipo_post"]
+        del context.user_data["esperando_post_tema"]
+        
+        ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
+        
+        if not ejemplos:
+            await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
+            return
+
+        prompt = f"Genera un post similar a estos ejemplos:\n" + "\n".join(ejemplos) + f"\n\nTema: {text}"
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": f"Habla como {config['configuracion']['nombre']}"},
+                      {"role": "user", "content": prompt}]
+        )
+
+        resultado = response["choices"][0]["message"]["content"]
+        await update.message.reply_text(resultado)
+
 # Comando /menu para mostrar opciones
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -129,28 +150,8 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("post_"):
         tipo_post = query.data.split("_")[1]
         context.user_data["tipo_post"] = tipo_post
+        context.user_data["esperando_post_tema"] = True
         await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
-
-# Generar post con GPT
-async def generar_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    tipo_post = context.user_data["tipo_post"]
-    ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
-
-    if not ejemplos:
-        await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
-        return
-
-    prompt = f"Genera un post similar a estos ejemplos:\n" + "\n".join(ejemplos) + f"\n\nTema: {text}"
-
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": f"Habla como {config['configuracion']['nombre']}"},
-                  {"role": "user", "content": prompt}]
-    )
-
-    resultado = response["choices"][0]["message"]["content"]
-    await update.message.reply_text(resultado)
 
 # Configurar el bot y añadir manejadores
 app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
