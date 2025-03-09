@@ -118,7 +118,10 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 Crear Post", callback_data="crear_post")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
+
+    # Corregimos el error: usamos effective_message para manejar tanto mensajes como botones
+    await update.effective_message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
+
 
 # Función para editar o eliminar ejemplos (próxima implementación)
 async def editar_ejemplo(update: Update, context: ContextTypes.DEFAULT_TYPE):
