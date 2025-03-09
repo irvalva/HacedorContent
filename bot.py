@@ -37,7 +37,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    # Guardar el nombre del personaje
     if "esperando_nombre" in context.user_data:
         config["configuracion"]["nombre"] = text
         del context.user_data["esperando_nombre"]
@@ -45,7 +44,6 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["esperando_etiqueta"] = True
         guardar_config(config)
 
-    # Guardar la etiqueta del personaje
     elif "esperando_etiqueta" in context.user_data:
         config["configuracion"]["etiqueta"] = text
         del context.user_data["esperando_etiqueta"]
@@ -53,21 +51,35 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["esperando_personalidad"] = True
         guardar_config(config)
 
-    # Guardar la personalidad del personaje
     elif "esperando_personalidad" in context.user_data:
-        print("Guardando personalidad...")  # Para depuración en la VM
         config["configuracion"]["personalidad"] = text
         del context.user_data["esperando_personalidad"]
         await update.message.reply_text("Personalidad guardada. ¿Qué servicios o productos vende? (Envíalos separados por comas)")
         context.user_data["esperando_servicios"] = True
         guardar_config(config)
 
-    # Guardar los servicios del personaje
     elif "esperando_servicios" in context.user_data:
         config["configuracion"]["servicios"] = [s.strip() for s in text.split(",")]
         del context.user_data["esperando_servicios"]
         await update.message.reply_text("Servicios guardados. ¡Configuración completada! Usa /menu para más opciones.")
         guardar_config(config)
+
+    elif "esperando_tipo_post" in context.user_data:
+        tipo_post = text.lower()
+        if tipo_post in config["tipos_de_post"]:
+            await update.message.reply_text("Ese tipo de post ya existe. Prueba con otro nombre.")
+            return
+        
+        config["tipos_de_post"][tipo_post] = {"ejemplos": []}
+        del context.user_data["esperando_tipo_post"]
+        guardar_config(config)
+        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Ahora puedes agregar ejemplos con /menu.")
+
+    elif "esperando_ejemplo" in context.user_data:
+        tipo_post = context.user_data["tipo_post"]
+        config["tipos_de_post"][tipo_post]["ejemplos"].append(text)
+        guardar_config(config)
+        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu para otras opciones.")
 
 # Comando /menu para mostrar opciones
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,6 +100,22 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Escribe el nombre del nuevo tipo de post:")
         context.user_data["esperando_tipo_post"] = True
 
+    elif query.data == "add_ejemplo":
+        tipos = list(config["tipos_de_post"].keys())
+        if not tipos:
+            await query.message.reply_text("No hay tipos de post registrados. Agrega uno con /menu.")
+            return
+
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"ejemplo_{t}")] for t in tipos]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("Selecciona el tipo de post para agregar ejemplos:", reply_markup=reply_markup)
+
+    elif query.data.startswith("ejemplo_"):
+        tipo_post = query.data.split("_")[1]
+        context.user_data["tipo_post"] = tipo_post
+        context.user_data["esperando_ejemplo"] = True
+        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}'.")
+
     elif query.data == "crear_post":
         tipos = list(config["tipos_de_post"].keys())
         if not tipos:
@@ -98,12 +126,10 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup)
 
-# Guardar el nuevo tipo de post
-async def agregar_tipo_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    config["tipos_de_post"][text.lower()] = {"ejemplos": []}
-    guardar_config(config)
-    await update.message.reply_text(f"Tipo de post '{text}' agregado.")
+    elif query.data.startswith("post_"):
+        tipo_post = query.data.split("_")[1]
+        context.user_data["tipo_post"] = tipo_post
+        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
 
 # Generar post con GPT
 async def generar_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
