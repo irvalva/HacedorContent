@@ -13,6 +13,7 @@ openai.api_key = OPENAI_API_KEY
 
 CONFIG_FILE = "config.json"
 
+# Función para cargar la configuración desde el JSON
 def cargar_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as file:
@@ -20,19 +21,23 @@ def cargar_config():
     except FileNotFoundError:
         return {"configuracion": {"nombre": "", "etiqueta": "", "personalidad": "", "servicios": []}, "tipos_de_post": {}}
 
+# Función para guardar la configuración en el JSON
 def guardar_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as file:
         json.dump(config, file, indent=4, ensure_ascii=False)
 
 config = cargar_config()
 
+# Comando /start para iniciar la configuración
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Hola! Vamos a configurar tu bot. ¿Cómo se llama tu personaje?")
     context.user_data["esperando_nombre"] = True
 
+# Manejo de respuestas del usuario
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
+    # Guardar el nombre del personaje
     if "esperando_nombre" in context.user_data:
         config["configuracion"]["nombre"] = text
         del context.user_data["esperando_nombre"]
@@ -40,6 +45,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["esperando_etiqueta"] = True
         guardar_config(config)
 
+    # Guardar la etiqueta del personaje
     elif "esperando_etiqueta" in context.user_data:
         config["configuracion"]["etiqueta"] = text
         del context.user_data["esperando_etiqueta"]
@@ -47,6 +53,23 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["esperando_personalidad"] = True
         guardar_config(config)
 
+    # Guardar la personalidad del personaje
+    elif "esperando_personalidad" in context.user_data:
+        print("Guardando personalidad...")  # Para depuración en la VM
+        config["configuracion"]["personalidad"] = text
+        del context.user_data["esperando_personalidad"]
+        await update.message.reply_text("Personalidad guardada. ¿Qué servicios o productos vende? (Envíalos separados por comas)")
+        context.user_data["esperando_servicios"] = True
+        guardar_config(config)
+
+    # Guardar los servicios del personaje
+    elif "esperando_servicios" in context.user_data:
+        config["configuracion"]["servicios"] = [s.strip() for s in text.split(",")]
+        del context.user_data["esperando_servicios"]
+        await update.message.reply_text("Servicios guardados. ¡Configuración completada! Usa /menu para más opciones.")
+        guardar_config(config)
+
+# Comando /menu para mostrar opciones
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ Agregar Tipo de Post", callback_data="add_tipo_post")],
@@ -56,6 +79,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
 
+# Manejo de botones
 async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -74,16 +98,23 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup)
 
+# Guardar el nuevo tipo de post
 async def agregar_tipo_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     config["tipos_de_post"][text.lower()] = {"ejemplos": []}
     guardar_config(config)
     await update.message.reply_text(f"Tipo de post '{text}' agregado.")
 
+# Generar post con GPT
 async def generar_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     tipo_post = context.user_data["tipo_post"]
     ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
+
+    if not ejemplos:
+        await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
+        return
+
     prompt = f"Genera un post similar a estos ejemplos:\n" + "\n".join(ejemplos) + f"\n\nTema: {text}"
 
     response = openai.ChatCompletion.create(
@@ -95,12 +126,13 @@ async def generar_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     resultado = response["choices"][0]["message"]["content"]
     await update.message.reply_text(resultado)
 
+# Configurar el bot y añadir manejadores
 app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("menu", menu))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_mensaje))
 app.add_handler(CallbackQueryHandler(botones))
 
+# Iniciar el bot
 print("Bot en marcha...")
 app.run_polling()
-
