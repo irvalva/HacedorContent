@@ -77,6 +77,12 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif "esperando_ejemplo" in context.user_data:
         tipo_post = context.user_data["tipo_post"]
+        
+        # Si el usuario está en modo "crear post", evitar agregar como ejemplo
+        if "esperando_post_tema" in context.user_data:
+            await update.message.reply_text("Parece que quieres generar un post. Usa /menu para elegir la opción correcta.")
+            return
+
         config["tipos_de_post"][tipo_post]["ejemplos"].append(text)
         guardar_config(config)
         await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu para otras opciones.")
@@ -107,58 +113,29 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ Agregar Tipo de Post", callback_data="add_tipo_post")],
         [InlineKeyboardButton("➕ Agregar Ejemplo", callback_data="add_ejemplo")],
+        [InlineKeyboardButton("✏️ Editar/Eliminar Ejemplo", callback_data="edit_ejemplo")],
+        [InlineKeyboardButton("✏️ Editar/Eliminar Tipo de Post", callback_data="edit_tipo")],
         [InlineKeyboardButton("📝 Crear Post", callback_data="crear_post")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
 
-# Manejo de botones
-async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# Función para editar o eliminar ejemplos (próxima implementación)
+async def editar_ejemplo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Función en desarrollo...")
 
-    if query.data == "add_tipo_post":
-        await query.message.reply_text("Escribe el nombre del nuevo tipo de post:")
-        context.user_data["esperando_tipo_post"] = True
-
-    elif query.data == "add_ejemplo":
-        tipos = list(config["tipos_de_post"].keys())
-        if not tipos:
-            await query.message.reply_text("No hay tipos de post registrados. Agrega uno con /menu.")
-            return
-
-        keyboard = [[InlineKeyboardButton(t, callback_data=f"ejemplo_{t}")] for t in tipos]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el tipo de post para agregar ejemplos:", reply_markup=reply_markup)
-
-    elif query.data.startswith("ejemplo_"):
-        tipo_post = query.data.split("_")[1]
-        context.user_data["tipo_post"] = tipo_post
-        context.user_data["esperando_ejemplo"] = True
-        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}'.")
-
-    elif query.data == "crear_post":
-        tipos = list(config["tipos_de_post"].keys())
-        if not tipos:
-            await query.message.reply_text("No hay tipos de post registrados. Agrega uno con /menu.")
-            return
-
-        keyboard = [[InlineKeyboardButton(t, callback_data=f"post_{t}")] for t in tipos]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup)
-
-    elif query.data.startswith("post_"):
-        tipo_post = query.data.split("_")[1]
-        context.user_data["tipo_post"] = tipo_post
-        context.user_data["esperando_post_tema"] = True
-        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
+# Función para editar o eliminar tipos de post (próxima implementación)
+async def editar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Función en desarrollo...")
 
 # Configurar el bot y añadir manejadores
 app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("menu", menu))
+app.add_handler(CommandHandler("editar_ejemplo", editar_ejemplo))
+app.add_handler(CommandHandler("editar_tipo", editar_tipo))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_mensaje))
-app.add_handler(CallbackQueryHandler(botones))
+app.add_handler(CallbackQueryHandler(menu))
 
 # Iniciar el bot
 print("Bot en marcha...")
