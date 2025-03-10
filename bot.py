@@ -35,37 +35,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Manejo de respuestas del usuario
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    text = update.message.text.strip()
 
-    if "esperando_nombre" in context.user_data:
-        config["configuracion"]["nombre"] = text
-        del context.user_data["esperando_nombre"]
-        await update.message.reply_text(f"Nombre guardado: {text}\nAhora dime la etiqueta para CTA (@usuario).")
-        context.user_data["esperando_etiqueta"] = True
-        guardar_config(config)
-
-    elif "esperando_etiqueta" in context.user_data:
-        config["configuracion"]["etiqueta"] = text
-        del context.user_data["esperando_etiqueta"]
-        await update.message.reply_text("Etiqueta guardada. Ahora describe la personalidad del personaje.")
-        context.user_data["esperando_personalidad"] = True
-        guardar_config(config)
-
-    elif "esperando_personalidad" in context.user_data:
-        config["configuracion"]["personalidad"] = text
-        del context.user_data["esperando_personalidad"]
-        await update.message.reply_text("Personalidad guardada. ¿Qué servicios o productos vende? (Envíalos separados por comas)")
-        context.user_data["esperando_servicios"] = True
-        guardar_config(config)
-
-    elif "esperando_servicios" in context.user_data:
-        config["configuracion"]["servicios"] = [s.strip() for s in text.split(",")]
-        del context.user_data["esperando_servicios"]
-        await update.message.reply_text("Servicios guardados. ¡Configuración completada! Usa /menu para más opciones.")
-        guardar_config(config)
-
-    elif "esperando_tipo_post" in context.user_data:
+    if "esperando_tipo_post" in context.user_data:
         tipo_post = text.lower()
+
         if tipo_post in config["tipos_de_post"]:
             await update.message.reply_text("Ese tipo de post ya existe. Prueba con otro nombre.")
             return
@@ -73,14 +47,13 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["tipos_de_post"][tipo_post] = {"ejemplos": []}
         del context.user_data["esperando_tipo_post"]
         guardar_config(config)
-        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Ahora puedes agregar ejemplos con /menu.")
+        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.")
 
     elif "esperando_ejemplo" in context.user_data:
         tipo_post = context.user_data["tipo_post"]
-        
-        # Si el usuario está en modo "crear post", evitar agregar como ejemplo
-        if "esperando_post_tema" in context.user_data:
-            await update.message.reply_text("Parece que quieres generar un post. Usa /menu para elegir la opción correcta.")
+
+        if text in config["tipos_de_post"][tipo_post]["ejemplos"]:
+            await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.")
             return
 
         config["tipos_de_post"][tipo_post]["ejemplos"].append(text)
@@ -90,14 +63,14 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "esperando_post_tema" in context.user_data:
         tipo_post = context.user_data["tipo_post"]
         del context.user_data["esperando_post_tema"]
-        
+
         ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
-        
+
         if not ejemplos:
             await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
             return
 
-        prompt = f"Genera un post similar a estos ejemplos:\n" + "\n".join(ejemplos) + f"\n\nTema: {text}"
+        prompt = f"Genera un post basado en estos ejemplos:\n" + "\n".join(ejemplos) + f"\n\nTema: {text}"
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -113,32 +86,58 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ Agregar Tipo de Post", callback_data="add_tipo_post")],
         [InlineKeyboardButton("➕ Agregar Ejemplo", callback_data="add_ejemplo")],
-        [InlineKeyboardButton("✏️ Editar/Eliminar Ejemplo", callback_data="edit_ejemplo")],
-        [InlineKeyboardButton("✏️ Editar/Eliminar Tipo de Post", callback_data="edit_tipo")],
         [InlineKeyboardButton("📝 Crear Post", callback_data="crear_post")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # Corregimos el error: usamos effective_message para manejar tanto mensajes como botones
     await update.effective_message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
 
+# Manejo de botones
+async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-# Función para editar o eliminar ejemplos (próxima implementación)
-async def editar_ejemplo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Función en desarrollo...")
+    if query.data == "add_tipo_post":
+        await query.message.reply_text("Escribe el nombre del nuevo tipo de post:")
+        context.user_data["esperando_tipo_post"] = True
 
-# Función para editar o eliminar tipos de post (próxima implementación)
-async def editar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Función en desarrollo...")
+    elif query.data == "add_ejemplo":
+        tipos = list(config["tipos_de_post"].keys())
+        if not tipos:
+            await query.message.reply_text("No hay tipos de post registrados. Agrega uno con /menu.")
+            return
+
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"ejemplo_{t}")] for t in tipos]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("Selecciona el tipo de post para agregar ejemplos:", reply_markup=reply_markup)
+
+    elif query.data.startswith("ejemplo_"):
+        tipo_post = query.data.split("_")[1]
+        context.user_data["tipo_post"] = tipo_post
+        context.user_data["esperando_ejemplo"] = True
+        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}'.")
+
+    elif query.data == "crear_post":
+        tipos = list(config["tipos_de_post"].keys())
+        if not tipos:
+            await query.message.reply_text("No hay tipos de post registrados. Agrega uno con /menu.")
+            return
+
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"post_{t}")] for t in tipos]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup)
+
+    elif query.data.startswith("post_"):
+        tipo_post = query.data.split("_")[1]
+        context.user_data["tipo_post"] = tipo_post
+        context.user_data["esperando_post_tema"] = True
+        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
 
 # Configurar el bot y añadir manejadores
 app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("menu", menu))
-app.add_handler(CommandHandler("editar_ejemplo", editar_ejemplo))
-app.add_handler(CommandHandler("editar_tipo", editar_tipo))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_mensaje))
-app.add_handler(CallbackQueryHandler(menu))
+app.add_handler(CallbackQueryHandler(botones))
 
 # Iniciar el bot
 print("Bot en marcha...")
