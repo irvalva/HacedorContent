@@ -88,8 +88,8 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
 
     prompt = (
         f"Genera un post para Telegram en {idioma} basado en el siguiente ejemplo:\n\n"
-        f"El post NO debe ser una copia exacta, pero debe mantener la misma magnitud en tamaño y estilo. "
-        f"Debe dar uso de negritas, cursivas, mayúsculas y espaciado si el ejemplo lo usa. "
+        f"El post NO debe ser una copia exacta, pero debe mantener aproximadamente la misma cantidad de palabras (pueden ser mas o menos pero con limite) y el estilo. "
+        f"Debe dar uso de negritas, cursivas, mayúsculas, minusculas y espaciado si el ejemplo lo usa. "
         f"NO uses signos de punto (.) ni hashtags.\n\n"
         f"Ejemplo: {ejemplo_text}\n\n"
         f"Tema: {tema}\n\n"
