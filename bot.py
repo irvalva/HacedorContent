@@ -139,15 +139,21 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Se arma el prompt combinando el ejemplo y el tema ingresado
         prompt = (
-            f"Genera un post para Telegram inspirado en el siguiente ejemplo (no es copia exacta, debe tener el tamaño similar y no debe tener signos de punto ni hashtags):\n\n"
-            f"Ejemplo: {ejemplo_seleccionado}\n\n"
-            f"Tema: {text}\n\n"
-            f"Datos del personaje:\n"
-            f"Nombre: {config['configuracion']['nombre']}\n"
-            f"Etiqueta: {config['configuracion']['etiqueta']}\n"
-            f"Personalidad: {config['configuracion']['personalidad']}\n"
-            f"Servicios: {', '.join(config['configuracion']['servicios'])}"
-        )
+    f"Genera un post para Telegram inspirado en el siguiente ejemplo. "
+    f"El post NO debe ser una copia exacta, pero debe mantener la misma magnitud en tamaño y estilo. "
+    f"Debe respetar la estructura y el formato, uso de negritas, cursivas, mayúsculas, espaciado del ejemplo, entre otros. "
+    f"NO uses signos de punto (.) ni hashtags.\n\n"
+    f"Ejemplo:\n{ejemplo_seleccionado}\n\n"
+    f"Ahora, genera un post sobre el siguiente tema manteniendo el estilo del ejemplo:\n"
+    f"{text}\n\n"
+    f"---\n"
+    f"Datos del personaje:\n"
+    f"Nombre: {config['configuracion']['nombre']}\n"
+    f"Etiqueta: {config['configuracion']['etiqueta']}\n"
+    f"Personalidad: {config['configuracion']['personalidad']}\n"
+    f"Servicios: {', '.join(config['configuracion']['servicios'])}"
+)
+
 
         try:
             response = openai.ChatCompletion.create(
