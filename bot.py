@@ -1,9 +1,9 @@
-import json
+ import json
 import openai
 import os
 import random
 
-# Intentamos importar html2text para convertir HTML a Markdown si es necesario.
+# Se intenta importar html2text para convertir HTML a Markdown en caso de ser necesario.
 try:
     import html2text
 except ImportError:
@@ -48,8 +48,9 @@ config = cargar_config()
 
 def process_example_text(text: str) -> str:
     """
-    Si el texto contiene etiquetas HTML y se dispone de la librería html2text,
+    Si el texto contiene etiquetas HTML y está disponible html2text,
     se convierte a Markdown; de lo contrario, se devuelve el texto tal cual.
+    Esto permite almacenar en el JSON el formato (por ejemplo, **negrita**).
     """
     if "<" in text and ">" in text and html2text:
         try:
@@ -78,6 +79,7 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     if not ejemplos:
         return None, None
 
+    # Seleccionar un índice aleatorio distinto al anterior si es posible.
     indices_disponibles = list(range(len(ejemplos)))
     if previous_index is not None and len(ejemplos) > 1:
         indices_disponibles = [i for i in indices_disponibles if i != previous_index]
@@ -85,7 +87,7 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     ejemplo_text = ejemplos[elegido]
 
     prompt = (
-         f"Genera un post para Telegram en {idioma} basado en el siguiente ejemplo:\n\n"
+        f"Genera un post para Telegram en {idioma} basado en el siguiente ejemplo:\n\n"
         f"El post NO debe ser una copia exacta, pero debe mantener la misma magnitud en tamaño y estilo. "
         f"Debe dar uso de negritas, cursivas, mayúsculas y espaciado si el ejemplo lo usa. "
         f"NO uses signos de punto (.) ni hashtags.\n\n"
@@ -120,7 +122,6 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    # Se utiliza parse_mode para que Telegram interprete Markdown
     await update.effective_message.reply_text(post_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 # ---------------------------
@@ -129,7 +130,47 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # Configuración del personaje
+    # Si se está esperando el tema para generar un post, tiene prioridad.
+    if context.user_data.get("esperando_post_tema"):
+        tipo_post = context.user_data.get("tipo_post")
+        tema = text
+        idioma = config["configuracion"].get("idioma", "Español")
+        context.user_data.pop("esperando_post_tema")
+        # Limpiar por si acaso la bandera de ejemplo estuviese activa.
+        context.user_data.pop("esperando_ejemplo", None)
+        
+        post_text, indice_ejemplo = await generate_post(tipo_post, tema, idioma)
+        if post_text is None:
+            await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
+            return
+        context.user_data["ultimo_tipo_post"] = tipo_post
+        context.user_data["ultimo_tema"] = tema
+        context.user_data["ultimo_ejemplo_index"] = indice_ejemplo
+        context.user_data["ultimo_post"] = post_text
+
+        await presentar_post(update, context, post_text)
+        return
+
+    # Procesar flujo de agregar ejemplo (solo si no se está esperando tema para post)
+    if context.user_data.get("esperando_ejemplo"):
+        tipo_post = context.user_data.get("tipo_post")
+        if not tipo_post:
+            await update.message.reply_text("Error: No se ha seleccionado un tipo de post.")
+            context.user_data.pop("esperando_ejemplo", None)
+            return
+        processed_text = process_example_text(text)
+        if processed_text in config["tipos_de_post"][tipo_post]["ejemplos"]:
+            await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.")
+            context.user_data.pop("esperando_ejemplo", None)
+            return
+
+        config["tipos_de_post"][tipo_post]["ejemplos"].append(processed_text)
+        guardar_config(config)
+        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu.", parse_mode="Markdown")
+        context.user_data.pop("esperando_ejemplo", None)
+        return
+
+    # Flujo de configuración del personaje
     if context.user_data.get("esperando_nombre"):
         config["configuracion"]["nombre"] = text
         guardar_config(config)
@@ -181,43 +222,6 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         guardar_config(config)
         context.user_data.pop("esperando_tipo_post")
         await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.")
-        return
-
-    # Agregar Ejemplo a un Tipo de Post
-    if context.user_data.get("esperando_ejemplo"):
-        tipo_post = context.user_data.get("tipo_post")
-        if not tipo_post:
-            await update.message.reply_text("Error: No se ha seleccionado un tipo de post.")
-            return
-
-        # Si el ejemplo viene de una fuente externa, se procesa para intentar convertir HTML a Markdown
-        processed_text = process_example_text(text)
-        if processed_text in config["tipos_de_post"][tipo_post]["ejemplos"]:
-            await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.")
-            return
-
-        config["tipos_de_post"][tipo_post]["ejemplos"].append(processed_text)
-        guardar_config(config)
-        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu.")
-        return
-
-    # Generar Post
-    if context.user_data.get("esperando_post_tema"):
-        tipo_post = context.user_data.get("tipo_post")
-        tema = text
-        idioma = config["configuracion"].get("idioma", "Español")
-        context.user_data.pop("esperando_post_tema")
-        
-        post_text, indice_ejemplo = await generate_post(tipo_post, tema, idioma)
-        if post_text is None:
-            await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
-            return
-        context.user_data["ultimo_tipo_post"] = tipo_post
-        context.user_data["ultimo_tema"] = tema
-        context.user_data["ultimo_ejemplo_index"] = indice_ejemplo
-        context.user_data["ultimo_post"] = post_text
-
-        await presentar_post(update, context, post_text)
         return
 
     # Edición de Configuración
@@ -275,7 +279,6 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         indice = context.user_data.get("editar_ejemplo_indice")
         tipo_post = context.user_data.get("tipo_editar")
         try:
-            # Procesamos el texto editado para conservar o convertir el formato
             config["tipos_de_post"][tipo_post]["ejemplos"][indice] = process_example_text(text)
             guardar_config(config)
             await update.message.reply_text("Ejemplo actualizado correctamente.", parse_mode="Markdown")
@@ -326,7 +329,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
         context.user_data["esperando_ejemplo"] = True
-        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}'.")
+        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}':")
 
     elif data == "crear_post":
         tipos = list(config["tipos_de_post"].keys())
@@ -341,6 +344,8 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
         context.user_data["esperando_post_tema"] = True
+        # Asegurarse de que no quede activa la bandera de agregar ejemplo.
+        context.user_data.pop("esperando_ejemplo", None)
         await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
 
     elif data == "editar_config":
@@ -432,7 +437,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             boton_text = f"{idx}. {ej[:20]}{'...' if len(ej) > 20 else ''}"
             keyboard.append([InlineKeyboardButton(boton_text, callback_data=f"editar_ejemplo_{idx-1}")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el ejemplo a editar/eliminar:", reply_markup=reply_markup)
+        await query.message.reply_text("Selecciona el ejemplo a editar/eliminar:", reply_markup=reply_markup, parse_mode="Markdown")
 
     elif data.startswith("editar_ejemplo_"):
         indice = int(data.split("_")[-1])
