@@ -139,7 +139,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Se arma el prompt combinando el ejemplo y el tema ingresado
         prompt = (
-            f"Genera un post para Telegram inspirado en el siguiente ejemplo (no es copia exacta):\n\n"
+            f"Genera un post para Telegram inspirado en el siguiente ejemplo (no es copia exacta, debe tener el tamaño similar y no debe tener signos de punto ni hashtags):\n\n"
             f"Ejemplo: {ejemplo_seleccionado}\n\n"
             f"Tema: {text}\n\n"
             f"Datos del personaje:\n"
