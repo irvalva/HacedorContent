@@ -3,7 +3,7 @@ import openai
 import os
 import random
 
-# Se intenta importar html2text para convertir HTML a Markdown en caso de ser necesario.
+# Se intenta importar html2text para convertir HTML a Markdown si fuera necesario.
 try:
     import html2text
 except ImportError:
@@ -49,14 +49,47 @@ config = cargar_config()
 def process_example_text(text: str) -> str:
     """
     Si el texto contiene etiquetas HTML y está disponible html2text,
-    se convierte a Markdown; de lo contrario, se devuelve el texto tal cual.
-    Esto permite almacenar en el JSON el formato (por ejemplo, **negrita**).
+    se convierte a Markdown; de lo contrario se devuelve el texto tal cual.
+    Esto sirve para ejemplos que vengan en HTML.
     """
     if "<" in text and ">" in text and html2text:
         try:
             text = html2text.html2text(text)
-        except Exception as e:
+        except Exception:
             pass
+    return text
+
+def convert_entities_to_markdown(message) -> str:
+    """
+    Reconstruye el texto formateado en Markdown a partir de las entidades
+    que envía el cliente de Telegram. Si no hay entidades, devuelve el texto tal cual.
+    """
+    if not message.entities:
+        return message.text
+    text = message.text
+    # Ordenamos las entidades de mayor a menor offset para no afectar los índices al insertar formato.
+    entities = sorted(message.entities, key=lambda ent: ent.offset, reverse=True)
+    for ent in entities:
+        start = ent.offset
+        end = ent.offset + ent.length
+        substring = text[start:end]
+        if ent.type == "bold":
+            formatted = f"**{substring}**"
+        elif ent.type == "italic":
+            formatted = f"_{substring}_"
+        elif ent.type == "underline":
+            formatted = f"__{substring}__"
+        elif ent.type == "strikethrough":
+            formatted = f"~~{substring}~~"
+        elif ent.type == "code":
+            formatted = f"`{substring}`"
+        elif ent.type == "pre":
+            formatted = f"```\n{substring}\n```"
+        elif ent.type == "text_link":
+            formatted = f"[{substring}]({ent.url})"
+        else:
+            formatted = substring
+        text = text[:start] + formatted + text[end:]
     return text
 
 # ---------------------------
@@ -130,13 +163,13 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # Si se está esperando el tema para generar un post, tiene prioridad.
+    # Si se espera el tema para generar el post, este tiene prioridad.
     if context.user_data.get("esperando_post_tema"):
         tipo_post = context.user_data.get("tipo_post")
         tema = text
         idioma = config["configuracion"].get("idioma", "Español")
         context.user_data.pop("esperando_post_tema")
-        # Limpiar por si acaso la bandera de ejemplo estuviese activa.
+        # Se limpia la bandera de agregar ejemplo si estuviera activa.
         context.user_data.pop("esperando_ejemplo", None)
         
         post_text, indice_ejemplo = await generate_post(tipo_post, tema, idioma)
@@ -151,14 +184,18 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await presentar_post(update, context, post_text)
         return
 
-    # Procesar flujo de agregar ejemplo (solo si no se está esperando tema para post)
+    # Procesar flujo de agregar ejemplo (solo si no se espera tema para post)
     if context.user_data.get("esperando_ejemplo"):
         tipo_post = context.user_data.get("tipo_post")
         if not tipo_post:
             await update.message.reply_text("Error: No se ha seleccionado un tipo de post.")
             context.user_data.pop("esperando_ejemplo", None)
             return
-        processed_text = process_example_text(text)
+        # Si el mensaje tiene entidades (formato nativo de Telegram), se reconstruye el markdown.
+        if update.message.entities:
+            processed_text = convert_entities_to_markdown(update.message)
+        else:
+            processed_text = process_example_text(text)
         if processed_text in config["tipos_de_post"][tipo_post]["ejemplos"]:
             await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.")
             context.user_data.pop("esperando_ejemplo", None)
@@ -344,7 +381,6 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
         context.user_data["esperando_post_tema"] = True
-        # Asegurarse de que no quede activa la bandera de agregar ejemplo.
         context.user_data.pop("esperando_ejemplo", None)
         await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
 
