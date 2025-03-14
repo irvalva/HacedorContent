@@ -10,7 +10,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Obtén el token del bot desde la variable de entorno
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = "7650649334:AAHXfWmyRyjAnTT7O-Bkc9Fr9FPUMvxBHBc"
 
 def utf16_offset_to_index(text: str, utf16_offset: int) -> int:
     """
