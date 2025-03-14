@@ -3,7 +3,7 @@ import openai
 import os
 import random
 
-# Se intenta importar html2text para convertir HTML a Markdown si fuera necesario.
+# Se intenta importar html2text (si fuera necesario para otras conversiones)
 try:
     import html2text
 except ImportError:
@@ -46,50 +46,45 @@ def guardar_config(config):
 
 config = cargar_config()
 
-def process_example_text(text: str) -> str:
+def convert_entities_to_html(message) -> str:
     """
-    Si el texto contiene etiquetas HTML y está disponible html2text,
-    se convierte a Markdown; de lo contrario se devuelve el texto tal cual.
-    Esto sirve para ejemplos que vengan en HTML.
-    """
-    if "<" in text and ">" in text and html2text:
-        try:
-            text = html2text.html2text(text)
-        except Exception:
-            pass
-    return text
-
-def convert_entities_to_markdown(message) -> str:
-    """
-    Reconstruye el texto formateado en Markdown a partir de las entidades
-    que envía el cliente de Telegram. Si no hay entidades, devuelve el texto tal cual.
+    Reconstruye el texto formateado en HTML a partir de las entidades que envía Telegram.
+    Por ejemplo, si el usuario envía “hola” con la palabra “como están” en negrita,
+    se reconstruirá como: "hola <b>como están</b>".
     """
     if not message.entities:
         return message.text
     text = message.text
-    # Ordenamos las entidades de mayor a menor offset para no afectar los índices al insertar formato.
+    # Ordenamos de mayor a menor offset para no afectar los índices al insertar etiquetas.
     entities = sorted(message.entities, key=lambda ent: ent.offset, reverse=True)
     for ent in entities:
         start = ent.offset
         end = ent.offset + ent.length
         substring = text[start:end]
         if ent.type == "bold":
-            formatted = f"**{substring}**"
+            formatted = f"<b>{substring}</b>"
         elif ent.type == "italic":
-            formatted = f"_{substring}_"
+            formatted = f"<i>{substring}</i>"
         elif ent.type == "underline":
-            formatted = f"__{substring}__"
+            formatted = f"<u>{substring}</u>"
         elif ent.type == "strikethrough":
-            formatted = f"~~{substring}~~"
+            formatted = f"<s>{substring}</s>"
         elif ent.type == "code":
-            formatted = f"`{substring}`"
+            formatted = f"<code>{substring}</code>"
         elif ent.type == "pre":
-            formatted = f"```\n{substring}\n```"
+            formatted = f"<pre>{substring}</pre>"
         elif ent.type == "text_link":
-            formatted = f"[{substring}]({ent.url})"
+            formatted = f'<a href="{ent.url}">{substring}</a>'
         else:
             formatted = substring
         text = text[:start] + formatted + text[end:]
+    return text
+
+def process_example_text(text: str) -> str:
+    """
+    En este caso, si el texto viene sin entidades, se asume que ya contiene el formato HTML
+    o se guarda tal cual.
+    """
     return text
 
 # ---------------------------
@@ -98,14 +93,15 @@ def convert_entities_to_markdown(message) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not config["configuracion"]["nombre"]:
         await update.message.reply_text(
-            "¡Hola! Vamos a configurar tu bot.\nPrimero, ¿cómo se llama tu personaje?"
+            "¡Hola! Vamos a configurar tu bot.\nPrimero, ¿cómo se llama tu personaje?",
+            parse_mode="HTML"
         )
         context.user_data["esperando_nombre"] = True
     else:
-        await update.message.reply_text("La configuración ya existe. Usa /menu para ver las opciones.")
+        await update.message.reply_text("La configuración ya existe. Usa /menu para ver las opciones.", parse_mode="HTML")
 
 # ---------------------------
-# GENERACIÓN DE POST CON FORMATO
+# GENERACIÓN DE POST CON FORMATO HTML
 # ---------------------------
 async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: int = None):
     ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
@@ -120,7 +116,8 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     ejemplo_text = ejemplos[elegido]
 
     prompt = (
-        f"Genera un post para Telegram en {idioma} basado en el siguiente ejemplo:\n\n"
+        f"Genera un post para Telegram en {idioma} utilizando HTML para el formato (por ejemplo, <b>negrita</b>, <i>cursiva</i>, <u>subrayado</u>, etc.), "
+        f"basado en el siguiente ejemplo:\n\n"
         f"El post NO debe ser una copia exacta, pero debe mantener aproximadamente la misma cantidad de palabras (pueden ser mas o menos pero con limite) y el estilo. "
         f"Debe dar uso de negritas, cursivas, mayúsculas, minusculas y espaciado si el ejemplo lo usa. "
         f"NO uses signos de punto (.) ni hashtags.\n\n"
@@ -155,7 +152,7 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.effective_message.reply_text(post_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await update.effective_message.reply_text(post_text, reply_markup=reply_markup, parse_mode="HTML")
 
 # ---------------------------
 # MANEJO DE MENSAJES Y CONFIGURACIÓN
@@ -174,7 +171,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         post_text, indice_ejemplo = await generate_post(tipo_post, tema, idioma)
         if post_text is None:
-            await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.")
+            await update.message.reply_text("No hay ejemplos en esta categoría. Agrega algunos antes de generar un post.", parse_mode="HTML")
             return
         context.user_data["ultimo_tipo_post"] = tipo_post
         context.user_data["ultimo_tema"] = tema
@@ -184,26 +181,26 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await presentar_post(update, context, post_text)
         return
 
-    # Procesar flujo de agregar ejemplo (solo si no se espera tema para post)
+    # Procesar flujo de agregar ejemplo (solo si no se espera el tema para post)
     if context.user_data.get("esperando_ejemplo"):
         tipo_post = context.user_data.get("tipo_post")
         if not tipo_post:
-            await update.message.reply_text("Error: No se ha seleccionado un tipo de post.")
+            await update.message.reply_text("Error: No se ha seleccionado un tipo de post.", parse_mode="HTML")
             context.user_data.pop("esperando_ejemplo", None)
             return
-        # Si el mensaje tiene entidades (formato nativo de Telegram), se reconstruye el markdown.
+        # Si el mensaje tiene entidades, se reconstruye el HTML; de lo contrario, se utiliza el texto tal cual.
         if update.message.entities:
-            processed_text = convert_entities_to_markdown(update.message)
+            processed_text = convert_entities_to_html(update.message)
         else:
             processed_text = process_example_text(text)
         if processed_text in config["tipos_de_post"][tipo_post]["ejemplos"]:
-            await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.")
+            await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.", parse_mode="HTML")
             context.user_data.pop("esperando_ejemplo", None)
             return
 
         config["tipos_de_post"][tipo_post]["ejemplos"].append(processed_text)
         guardar_config(config)
-        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu.", parse_mode="Markdown")
+        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu.", parse_mode="HTML")
         context.user_data.pop("esperando_ejemplo", None)
         return
 
@@ -212,7 +209,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["nombre"] = text
         guardar_config(config)
         context.user_data.pop("esperando_nombre")
-        await update.message.reply_text("Perfecto. Ahora ingresa la etiqueta (ejemplo: @ejemplo):")
+        await update.message.reply_text("Perfecto. Ahora ingresa la etiqueta (ejemplo: @ejemplo):", parse_mode="HTML")
         context.user_data["esperando_etiqueta"] = True
         return
 
@@ -220,7 +217,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["etiqueta"] = text
         guardar_config(config)
         context.user_data.pop("esperando_etiqueta")
-        await update.message.reply_text("Muy bien. Escribe una breve descripción de la personalidad del personaje:")
+        await update.message.reply_text("Muy bien. Escribe una breve descripción de la personalidad del personaje:", parse_mode="HTML")
         context.user_data["esperando_personalidad"] = True
         return
 
@@ -228,7 +225,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["personalidad"] = text
         guardar_config(config)
         context.user_data.pop("esperando_personalidad")
-        await update.message.reply_text("Por último, ingresa los servicios o productos que ofrece (separados por comas):")
+        await update.message.reply_text("Por último, ingresa los servicios o productos que ofrece (separados por comas):", parse_mode="HTML")
         context.user_data["esperando_servicios"] = True
         return
 
@@ -237,7 +234,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["servicios"] = servicios
         guardar_config(config)
         context.user_data.pop("esperando_servicios")
-        await update.message.reply_text("Ahora, ingresa el idioma en el que deseas redactar los posts (ejemplo: Español, Inglés, etc.):")
+        await update.message.reply_text("Ahora, ingresa el idioma en el que deseas redactar los posts (ejemplo: Español, Inglés, etc.):", parse_mode="HTML")
         context.user_data["esperando_idioma"] = True
         return
 
@@ -245,20 +242,20 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["idioma"] = text
         guardar_config(config)
         context.user_data.pop("esperando_idioma")
-        await update.message.reply_text("¡Configuración completada! Usa /menu para ver las opciones.")
+        await update.message.reply_text("¡Configuración completada! Usa /menu para ver las opciones.", parse_mode="HTML")
         return
 
     # Agregar Tipo de Post
     if context.user_data.get("esperando_tipo_post"):
         tipo_post = text.lower()
         if tipo_post in config["tipos_de_post"]:
-            await update.message.reply_text("Ese tipo de post ya existe. Prueba con otro nombre.")
+            await update.message.reply_text("Ese tipo de post ya existe. Prueba con otro nombre.", parse_mode="HTML")
             return
         
         config["tipos_de_post"][tipo_post] = {"ejemplos": []}
         guardar_config(config)
         context.user_data.pop("esperando_tipo_post")
-        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.")
+        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.", parse_mode="HTML")
         return
 
     # Edición de Configuración
@@ -266,21 +263,21 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["nombre"] = text
         guardar_config(config)
         context.user_data.pop("edit_nombre")
-        await update.message.reply_text("Nombre actualizado.")
+        await update.message.reply_text("Nombre actualizado.", parse_mode="HTML")
         return
 
     if context.user_data.get("edit_etiqueta"):
         config["configuracion"]["etiqueta"] = text
         guardar_config(config)
         context.user_data.pop("edit_etiqueta")
-        await update.message.reply_text("Etiqueta actualizada.")
+        await update.message.reply_text("Etiqueta actualizada.", parse_mode="HTML")
         return
 
     if context.user_data.get("edit_personalidad"):
         config["configuracion"]["personalidad"] = text
         guardar_config(config)
         context.user_data.pop("edit_personalidad")
-        await update.message.reply_text("Personalidad actualizada.")
+        await update.message.reply_text("Personalidad actualizada.", parse_mode="HTML")
         return
 
     if context.user_data.get("edit_servicios"):
@@ -288,27 +285,27 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["configuracion"]["servicios"] = servicios
         guardar_config(config)
         context.user_data.pop("edit_servicios")
-        await update.message.reply_text("Servicios actualizados.")
+        await update.message.reply_text("Servicios actualizados.", parse_mode="HTML")
         return
 
     if context.user_data.get("edit_idioma"):
         config["configuracion"]["idioma"] = text
         guardar_config(config)
         context.user_data.pop("edit_idioma")
-        await update.message.reply_text("Idioma actualizado.")
+        await update.message.reply_text("Idioma actualizado.", parse_mode="HTML")
         return
 
     # Edición de Tipo de Post (nombre)
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
         if tipo_actual not in config["tipos_de_post"]:
-            await update.message.reply_text("Error: Tipo de post no encontrado.")
+            await update.message.reply_text("Error: Tipo de post no encontrado.", parse_mode="HTML")
             context.user_data.pop("edit_nombre_tipo")
             return
         config["tipos_de_post"][text] = config["tipos_de_post"].pop(tipo_actual)
         guardar_config(config)
         context.user_data.pop("edit_nombre_tipo")
-        await update.message.reply_text(f"El tipo de post se ha renombrado a '{text}'.")
+        await update.message.reply_text(f"El tipo de post se ha renombrado a '{text}'.", parse_mode="HTML")
         return
 
     # Edición de Ejemplo
@@ -318,13 +315,13 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             config["tipos_de_post"][tipo_post]["ejemplos"][indice] = process_example_text(text)
             guardar_config(config)
-            await update.message.reply_text("Ejemplo actualizado correctamente.", parse_mode="Markdown")
+            await update.message.reply_text("Ejemplo actualizado correctamente.", parse_mode="HTML")
         except IndexError:
-            await update.message.reply_text("Error al actualizar el ejemplo.")
+            await update.message.reply_text("Error al actualizar el ejemplo.", parse_mode="HTML")
         context.user_data.pop("editar_ejemplo_indice")
         return
 
-    await update.message.reply_text("No se reconoce la acción. Usa /menu para ver las opciones.")
+    await update.message.reply_text("No se reconoce la acción. Usa /menu para ver las opciones.", parse_mode="HTML")
 
 # ---------------------------
 # MENÚ PRINCIPAL
@@ -339,7 +336,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✏️ Editar Tipos de Post", callback_data="editar_tipos")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.effective_message.reply_text("Selecciona una opción:", reply_markup=reply_markup)
+    await update.effective_message.reply_text("Selecciona una opción:", reply_markup=reply_markup, parse_mode="HTML")
 
 # ---------------------------
 # MANEJO DE BOTONES (CALLBACK)
@@ -350,39 +347,39 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "add_tipo_post":
-        await query.message.reply_text("Escribe el nombre del nuevo tipo de post:")
+        await query.message.reply_text("Escribe el nombre del nuevo tipo de post:", parse_mode="HTML")
         context.user_data["esperando_tipo_post"] = True
 
     elif data == "add_ejemplo":
         tipos = list(config["tipos_de_post"].keys())
         if not tipos:
-            await query.message.reply_text("No hay tipos de post registrados. Agrégalo con /menu.")
+            await query.message.reply_text("No hay tipos de post registrados. Agrégalo con /menu.", parse_mode="HTML")
             return
         keyboard = [[InlineKeyboardButton(t, callback_data=f"ejemplo_{t}")] for t in tipos]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el tipo de post para agregar un ejemplo:", reply_markup=reply_markup)
+        await query.message.reply_text("Selecciona el tipo de post para agregar un ejemplo:", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data.startswith("ejemplo_"):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
         context.user_data["esperando_ejemplo"] = True
-        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}':")
+        await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}':", parse_mode="HTML")
 
     elif data == "crear_post":
         tipos = list(config["tipos_de_post"].keys())
         if not tipos:
-            await query.message.reply_text("No hay tipos de post registrados. Agrégalo con /menu.")
+            await query.message.reply_text("No hay tipos de post registrados. Agrégalo con /menu.", parse_mode="HTML")
             return
         keyboard = [[InlineKeyboardButton(t, callback_data=f"post_{t}")] for t in tipos]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup)
+        await query.message.reply_text("Selecciona el tipo de post:", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data.startswith("post_"):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
         context.user_data["esperando_post_tema"] = True
         context.user_data.pop("esperando_ejemplo", None)
-        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':")
+        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':", parse_mode="HTML")
 
     elif data == "editar_config":
         keyboard = [
@@ -392,34 +389,34 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Servicios", callback_data="edit_servicios_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el campo a editar:", reply_markup=reply_markup)
+        await query.message.reply_text("Selecciona el campo a editar:", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data == "edit_nombre_menu":
         context.user_data["edit_nombre"] = True
-        await query.message.reply_text("Ingresa el nuevo nombre:")
+        await query.message.reply_text("Ingresa el nuevo nombre:", parse_mode="HTML")
     elif data == "edit_etiqueta_menu":
         context.user_data["edit_etiqueta"] = True
-        await query.message.reply_text("Ingresa la nueva etiqueta:")
+        await query.message.reply_text("Ingresa la nueva etiqueta:", parse_mode="HTML")
     elif data == "edit_personalidad_menu":
         context.user_data["edit_personalidad"] = True
-        await query.message.reply_text("Ingresa la nueva descripción de personalidad:")
+        await query.message.reply_text("Ingresa la nueva descripción de personalidad:", parse_mode="HTML")
     elif data == "edit_servicios_menu":
         context.user_data["edit_servicios"] = True
-        await query.message.reply_text("Ingresa los nuevos servicios (separados por comas):")
+        await query.message.reply_text("Ingresa los nuevos servicios (separados por comas):", parse_mode="HTML")
 
     elif data == "configurar_idioma":
         context.user_data["edit_idioma"] = True
-        await query.message.reply_text("Ingresa el idioma en el que deseas redactar los posts:")
+        await query.message.reply_text("Ingresa el idioma en el que deseas redactar los posts:", parse_mode="HTML")
 
     elif data == "editar_tipos":
         if not config["tipos_de_post"]:
-            await query.message.reply_text("No hay tipos de post para editar.")
+            await query.message.reply_text("No hay tipos de post para editar.", parse_mode="HTML")
             return
         keyboard = []
         for t in config["tipos_de_post"]:
             keyboard.append([InlineKeyboardButton(t, callback_data=f"edit_tipo_{t}")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el tipo de post a editar:", reply_markup=reply_markup)
+        await query.message.reply_text("Selecciona el tipo de post a editar:", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data.startswith("edit_tipo_"):
         tipo_post = data.split("_", 2)[2]
@@ -430,11 +427,11 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Ver ejemplos", callback_data="ver_ejemplos")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text(f"Opciones para el tipo '{tipo_post}':", reply_markup=reply_markup)
+        await query.message.reply_text(f"Opciones para el tipo '{tipo_post}':", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data == "editar_nombre_tipo":
         context.user_data["edit_nombre_tipo"] = True
-        await query.message.reply_text("Ingresa el nuevo nombre para este tipo de post:")
+        await query.message.reply_text("Ingresa el nuevo nombre para este tipo de post:", parse_mode="HTML")
 
     elif data == "eliminar_tipo":
         tipo_post = context.user_data.get("tipo_editar")
@@ -445,7 +442,8 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text(
             f"¿Estás seguro de eliminar el tipo de post '{tipo_post}'? Se borrarán también todos sus ejemplos.",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode="HTML"
         )
 
     elif data == "confirm_eliminar_tipo":
@@ -453,27 +451,27 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if tipo_post in config["tipos_de_post"]:
             del config["tipos_de_post"][tipo_post]
             guardar_config(config)
-            await query.message.reply_text(f"Tipo de post '{tipo_post}' eliminado.")
+            await query.message.reply_text(f"Tipo de post '{tipo_post}' eliminado.", parse_mode="HTML")
         else:
-            await query.message.reply_text("Error: Tipo de post no encontrado.")
+            await query.message.reply_text("Error: Tipo de post no encontrado.", parse_mode="HTML")
         context.user_data.pop("tipo_editar", None)
 
     elif data == "cancel_eliminar_tipo":
-        await query.message.reply_text("Eliminación cancelada.")
+        await query.message.reply_text("Eliminación cancelada.", parse_mode="HTML")
         context.user_data.pop("tipo_editar", None)
 
     elif data == "ver_ejemplos":
         tipo_post = context.user_data.get("tipo_editar")
         ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
         if not ejemplos:
-            await query.message.reply_text("No hay ejemplos para este tipo de post.")
+            await query.message.reply_text("No hay ejemplos para este tipo de post.", parse_mode="HTML")
             return
         keyboard = []
         for idx, ej in enumerate(ejemplos, start=1):
             boton_text = f"{idx}. {ej[:20]}{'...' if len(ej) > 20 else ''}"
             keyboard.append([InlineKeyboardButton(boton_text, callback_data=f"editar_ejemplo_{idx-1}")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Selecciona el ejemplo a editar/eliminar:", reply_markup=reply_markup, parse_mode="Markdown")
+        await query.message.reply_text("Selecciona el ejemplo a editar/eliminar:", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data.startswith("editar_ejemplo_"):
         indice = int(data.split("_")[-1])
@@ -481,19 +479,19 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             ejemplo = config["tipos_de_post"][tipo_post]["ejemplos"][indice]
         except IndexError:
-            await query.message.reply_text("Ejemplo no encontrado.")
+            await query.message.reply_text("Ejemplo no encontrado.", parse_mode="HTML")
             return
         keyboard = [
             [InlineKeyboardButton("Editar", callback_data=f"modificar_ejemplo_{indice}")],
             [InlineKeyboardButton("Eliminar", callback_data=f"borrar_ejemplo_{indice}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text(f"Ejemplo seleccionado:\n{ejemplo}\n¿Qué deseas hacer?", reply_markup=reply_markup, parse_mode="Markdown")
+        await query.message.reply_text(f"Ejemplo seleccionado:\n{ejemplo}\n¿Qué deseas hacer?", reply_markup=reply_markup, parse_mode="HTML")
 
     elif data.startswith("modificar_ejemplo_"):
         indice = int(data.split("_")[-1])
         context.user_data["editar_ejemplo_indice"] = indice
-        await query.message.reply_text("Envía el nuevo texto para este ejemplo:")
+        await query.message.reply_text("Envía el nuevo texto para este ejemplo:", parse_mode="HTML")
 
     elif data.startswith("borrar_ejemplo_"):
         indice = int(data.split("_")[-1])
@@ -501,13 +499,13 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             borrado = config["tipos_de_post"][tipo_post]["ejemplos"].pop(indice)
             guardar_config(config)
-            await query.message.reply_text(f"Ejemplo borrado:\n{borrado}", parse_mode="Markdown")
+            await query.message.reply_text(f"Ejemplo borrado:\n{borrado}", parse_mode="HTML")
         except IndexError:
-            await query.message.reply_text("Error al borrar el ejemplo.")
+            await query.message.reply_text("Error al borrar el ejemplo.", parse_mode="HTML")
 
     elif data == "aceptar_post":
         post = context.user_data.get("ultimo_post", "")
-        await query.message.reply_text(f"Post aceptado:\n\n{post}", parse_mode="Markdown")
+        await query.message.reply_text(f"Post aceptado:\n\n{post}", parse_mode="HTML")
         context.user_data.pop("ultimo_post", None)
         context.user_data.pop("ultimo_tipo_post", None)
         context.user_data.pop("ultimo_tema", None)
@@ -530,13 +528,13 @@ async def editar_textos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
         if tipo_actual not in config["tipos_de_post"]:
-            await update.message.reply_text("Error: Tipo de post no encontrado.")
+            await update.message.reply_text("Error: Tipo de post no encontrado.", parse_mode="HTML")
             context.user_data.pop("edit_nombre_tipo")
             return
         config["tipos_de_post"][update.message.text.strip()] = config["tipos_de_post"].pop(tipo_actual)
         guardar_config(config)
         context.user_data.pop("edit_nombre_tipo")
-        await update.message.reply_text(f"El tipo de post se ha renombrado a '{update.message.text.strip()}'.")
+        await update.message.reply_text(f"El tipo de post se ha renombrado a '{update.message.text.strip()}'.", parse_mode="HTML")
         return
 
     await recibir_mensaje(update, context)
