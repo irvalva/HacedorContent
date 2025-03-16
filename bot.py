@@ -133,16 +133,24 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     # MODIFICADO: El prompt incluye instrucciones para que la respuesta FINAL
     # contenga ÚNICAMENTE el contenido del post, sin detalles internos.
     prompt = (
-        f"Genera un post para Telegram en {idioma} utilizando HTML para el formato (por ejemplo, <b>negrita</b>, <i>cursiva</i>, <u>subrayado</u>, etc.). "
-        f"Basándote en el siguiente ejemplo, crea un post similar en estilo y tono, pero **NO** incluyas en el resultado ningún encabezado o detalle interno como 'Tema:' o 'Datos del personaje:'.\n\n"
-        f"Ejemplo (para inspirarte): {ejemplo_text}\n\n"
-        f"Tema: {tema}\n\n"
-        f"Utiliza los siguientes datos para adaptar el estilo (pero no los incluyas en el post final):\n"
-        f"Nombre: {config['configuracion']['nombre']}\n"
-        f"Etiqueta: {config['configuracion']['etiqueta']}\n"
-        f"Personalidad: {config['configuracion']['personalidad']}\n"
-        f"Servicios: {', '.join(config['configuracion']['servicios'])}\n\n"
-        f"Redacta únicamente el contenido final del post para Telegram, sin incluir los encabezados o detalles internos."
+        f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
+        f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
+        f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo, tono y extensión similares, "
+        f"pero el contenido final debe ser 100% original y adaptado al siguiente tema:\n\n"
+        f"\"{tema}\"\n\n"
+
+        f"Ejemplo (solo para inspirarte en cuanto a formato y extensión de texto):\n{ejemplo_text}\n\n"
+
+        f"Usa internamente los siguientes datos para adaptar el estilo y tono del mensaje, "
+        f"pero **no los menciones directamente** en el post final:\n"
+        f"- Personalidad del personaje: {config['configuracion']['personalidad']}\n"
+        f"- Servicios o productos que ofrece: {', '.join(config['configuracion']['servicios'])}\n\n"
+
+        f"En el post incorpora de manera natural la etiqueta \"{config['configuracion']['etiqueta']}\" "
+        f"en el llamado a la acción (CTA).\n\n"
+
+        f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados, sin 'Tema:', "
+        f"sin 'Ejemplo:', sin 'Personalidad:' o 'Servicios:'. No uses hashtags ni puntos finales (.) en el texto."
     )
     
     try:
