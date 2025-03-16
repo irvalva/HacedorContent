@@ -5,7 +5,8 @@ import random
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
 )
 import logging
 
@@ -16,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Cargar variables de entorno y configurar token
+# Cargar variables de entorno
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -25,7 +26,6 @@ if not TELEGRAM_BOT_TOKEN or not OPENAI_API_KEY:
     exit(1)
 openai.api_key = OPENAI_API_KEY
 
-# Archivo de configuración
 CONFIG_FILE = "config.json"
 
 # Funciones para cargar y guardar la configuración en JSON
@@ -51,12 +51,11 @@ def guardar_config(config):
 
 config = cargar_config()
 
-# --- Funciones para convertir el formato del mensaje ---
-
+# --- Conversión de formato a HTML ---
 def utf16_offset_to_index(text: str, utf16_offset: int) -> int:
     """
     Convierte un offset (en UTF-16 code units) al índice correcto en la cadena de Python.
-    Telegram reporta los offsets basados en UTF-16, lo que puede provocar discrepancias.
+    Telegram reporta los offsets basados en UTF-16.
     """
     count = 0
     for i, ch in enumerate(text):
@@ -71,15 +70,14 @@ def utf16_offset_to_index(text: str, utf16_offset: int) -> int:
 def convert_entities_to_html(message) -> str:
     """
     Reconstruye el texto formateado en HTML a partir de las entidades que envía Telegram.
-    Se usan los offsets convertidos para insertar las etiquetas sin partir palabras.
+    Se ordenan las entidades (usando offsets convertidos) en orden inverso para no afectar los índices.
     """
     if not message.entities:
         return message.text
 
     text = message.text
-    # Ordenar las entidades de menor a mayor usando los índices convertidos
+    # Ordenamos de menor a mayor (según índice convertido)
     entities = sorted(message.entities, key=lambda ent: utf16_offset_to_index(text, ent.offset))
-    # Iterar en orden inverso para no alterar los índices pendientes
     for ent in reversed(entities):
         start = utf16_offset_to_index(text, ent.offset)
         end = utf16_offset_to_index(text, ent.offset + ent.length)
@@ -105,14 +103,12 @@ def convert_entities_to_html(message) -> str:
 
 def process_example_text(text: str) -> str:
     """
-    En este caso, si el texto viene sin entidades, se asume que ya contiene el formato HTML
-    o se guarda tal cual.
+    Si el texto no tiene entidades, se asume que ya tiene el formato deseado (HTML) o se guarda tal cual.
     """
     return text
 
-# --- Flujo de Configuración del Bot ---
+# --- Flujo de configuración inicial ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Si aún no se ha configurado el personaje, iniciar la secuencia
     if not config["configuracion"]["nombre"]:
         await update.message.reply_text(
             "¡Hola! Vamos a configurar tu bot.\nPrimero, ¿cómo se llama tu personaje?",
@@ -122,42 +118,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("La configuración ya existe. Usa /menu para ver las opciones.", parse_mode="HTML")
 
-# --- Función para generar post con ChatGPT ---
+# --- Generación de Post con ChatGPT ---
 async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: int = None):
     ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
     if not ejemplos:
         return None, None
 
-    # Seleccionar aleatoriamente un ejemplo distinto al anterior (si es posible)
     indices_disponibles = list(range(len(ejemplos)))
     if previous_index is not None and len(ejemplos) > 1:
         indices_disponibles = [i for i in indices_disponibles if i != previous_index]
     elegido = random.choice(indices_disponibles)
     ejemplo_text = ejemplos[elegido]
 
+    # MODIFICADO: El prompt incluye instrucciones para que la respuesta FINAL
+    # contenga ÚNICAMENTE el contenido del post, sin detalles internos.
     prompt = (
-        f"Genera un post para Telegram en {idioma} utilizando HTML para el formato (por ejemplo, <b>negrita</b>, <i>cursiva</i>, <u>subrayado</u>, etc.) "
-        f"basado en el siguiente ejemplo. No debe ser una copia exacta, pero debe mantener un estilo similar, usando mayúsculas, minúsculas y espaciado si el ejemplo lo utiliza. "
-        f"NO uses signos de punto (.) ni hashtags.\n\n"
-        f"Ejemplo: {ejemplo_text}\n\n"
+        f"Genera un post para Telegram en {idioma} utilizando HTML para el formato (por ejemplo, <b>negrita</b>, <i>cursiva</i>, <u>subrayado</u>, etc.). "
+        f"Basándote en el siguiente ejemplo, crea un post similar en estilo y tono, pero **NO** incluyas en el resultado ningún encabezado o detalle interno como 'Tema:' o 'Datos del personaje:'.\n\n"
+        f"Ejemplo (para inspirarte): {ejemplo_text}\n\n"
         f"Tema: {tema}\n\n"
-        f"Datos del personaje:\n"
+        f"Utiliza los siguientes datos para adaptar el estilo (pero no los incluyas en el post final):\n"
         f"Nombre: {config['configuracion']['nombre']}\n"
         f"Etiqueta: {config['configuracion']['etiqueta']}\n"
         f"Personalidad: {config['configuracion']['personalidad']}\n"
         f"Servicios: {', '.join(config['configuracion']['servicios'])}\n\n"
-        f"Redacta el post en {idioma}."
+        f"Redacta únicamente el contenido final del post para Telegram, sin incluir los encabezados o detalles internos."
     )
     
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"Habla como {config['configuracion']['nombre']}."},
+                {"role": "system", "content": f"Habla como {config['configuracion']['nombre']}. No incluyas datos internos; responde solo con el contenido final."},
                 {"role": "user", "content": prompt}
             ]
         )
-        post_text = response["choices"][0]["message"]["content"]
+        post_text = response["choices"][0]["message"]["content"].strip()
         return post_text, elegido
     except Exception as e:
         return f"Ocurrió un error al generar el post: {e}", elegido
@@ -172,17 +168,17 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.effective_message.reply_text(post_text, reply_markup=reply_markup, parse_mode="HTML")
 
-# --- Función que gestiona los mensajes de texto según el estado ---
+# --- Manejo de mensajes según el estado ---
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # PRIORIDAD: Si se espera el tema para generar un post
+    # Si se espera el tema para generar el post, tiene prioridad
     if context.user_data.get("esperando_post_tema"):
         tipo_post = context.user_data.get("tipo_post")
         tema = text
         idioma = config["configuracion"].get("idioma", "Español")
         context.user_data.pop("esperando_post_tema")
-        context.user_data.pop("esperando_ejemplo", None)  # Limpiar si queda activo
+        context.user_data.pop("esperando_ejemplo", None)
 
         post_text, indice_ejemplo = await generate_post(tipo_post, tema, idioma)
         if post_text is None:
@@ -195,14 +191,13 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await presentar_post(update, context, post_text)
         return
 
-    # Si se está esperando un ejemplo para agregar
+    # Si se espera un ejemplo para agregar
     if context.user_data.get("esperando_ejemplo"):
         tipo_post = context.user_data.get("tipo_post")
         if not tipo_post:
             await update.message.reply_text("Error: No se ha seleccionado un tipo de post.", parse_mode="HTML")
             context.user_data.pop("esperando_ejemplo", None)
             return
-        # Convertir el mensaje a HTML usando las entidades
         if update.message.entities:
             processed_text = convert_entities_to_html(update.message)
         else:
@@ -211,10 +206,9 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Este ejemplo ya existe. No se ha agregado duplicado.", parse_mode="HTML")
             context.user_data.pop("esperando_ejemplo", None)
             return
-
         config["tipos_de_post"][tipo_post]["ejemplos"].append(processed_text)
         guardar_config(config)
-        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando más o usar /menu.", parse_mode="HTML")
+        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando o usar /menu.", parse_mode="HTML")
         context.user_data.pop("esperando_ejemplo", None)
         return
 
@@ -261,7 +255,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Agregar Tipo de Post
     if context.user_data.get("esperando_tipo_post"):
-        tipo_post = text.lower()  # se usa minúsculas para evitar duplicados
+        tipo_post = text.lower()
         if tipo_post in config["tipos_de_post"]:
             await update.message.reply_text("Ese tipo de post ya existe. Prueba con otro nombre.", parse_mode="HTML")
             return
@@ -326,7 +320,6 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         indice = context.user_data.get("editar_ejemplo_indice")
         tipo_post = context.user_data.get("tipo_editar")
         try:
-            # Aquí se actualiza el ejemplo sin procesamiento adicional; se podría usar convert_entities_to_html si se reciben entidades
             config["tipos_de_post"][tipo_post]["ejemplos"][indice] = process_example_text(text)
             guardar_config(config)
             await update.message.reply_text("Ejemplo actualizado correctamente.", parse_mode="HTML")
@@ -335,7 +328,6 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("editar_ejemplo_indice")
         return
 
-    # Si no se reconoce la acción, se notifica
     await update.message.reply_text("No se reconoce la acción. Usa /menu para ver las opciones.", parse_mode="HTML")
 
 # --- Menú Principal ---
@@ -480,11 +472,11 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = []
         for idx, ej in enumerate(ejemplos, start=1):
             boton_text = f"{idx}. {ej[:20]}{'...' if len(ej) > 20 else ''}"
-            keyboard.append([InlineKeyboardButton(boton_text, callback_data=f"editar_ejemplo_{idx-1}")])
+            keyboard.append([InlineKeyboardButton(boton_text, callback_data=f"editar_ejemplos_{idx-1}")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("Selecciona el ejemplo a editar/eliminar:", reply_markup=reply_markup, parse_mode="HTML")
 
-    elif data.startswith("editar_ejemplo_"):
+    elif data.startswith("editar_ejemplos_"):
         indice = int(data.split("_")[-1])
         tipo_post = context.user_data.get("tipo_editar")
         try:
@@ -492,7 +484,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IndexError:
             await query.message.reply_text("Ejemplo no encontrado.", parse_mode="HTML")
             return
-        # Enviar mensaje separado para visualizar el ejemplo y luego preguntar qué hacer
+        # Enviar mensaje separado para mostrar el ejemplo y luego preguntar
         await query.message.reply_text(f"Ejemplo seleccionado:\n{ejemplo}", parse_mode="HTML")
         keyboard = [
             [InlineKeyboardButton("Editar", callback_data=f"modificar_ejemplo_{indice}")],
@@ -518,8 +510,9 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "aceptar_post":
         post = context.user_data.get("ultimo_post", "")
-        await query.message.reply_text(f"Post aceptado:\n\n{post}", parse_mode="HTML")
-        # Limpiar variables temporales
+        # El mensaje de "Post aceptado" se enviará separado.
+        await query.message.reply_text("Post aceptado:", parse_mode="HTML")
+        await query.message.reply_text(post, parse_mode="HTML")
         context.user_data.pop("ultimo_post", None)
         context.user_data.pop("ultimo_tipo_post", None)
         context.user_data.pop("ultimo_tema", None)
@@ -535,7 +528,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["ultimo_ejemplo_index"] = new_index
         await presentar_post(update, context, new_post)
 
-# --- Manejo adicional para editar textos (mensaje) ---
+# --- Manejo adicional para editar textos (mensajes) ---
 async def editar_textos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
@@ -548,7 +541,6 @@ async def editar_textos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("edit_nombre_tipo")
         await update.message.reply_text(f"El tipo de post se ha renombrado a '{update.message.text.strip()}'.", parse_mode="HTML")
         return
-
     await recibir_mensaje(update, context)
 
 # --- Configuración del Bot ---
