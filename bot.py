@@ -150,7 +150,7 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
         f"en el llamado a la acción (CTA).\n\n"
 
         f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados, sin 'Tema:', "
-        f"sin 'Ejemplo:', sin 'Personalidad:' o 'Servicios:'. No uses hashtags ni puntos finales (.) en el texto."
+        f"sin 'Ejemplo:', sin 'Personalidad:' o 'Servicios:'. No uses hashtags ni puntos (.) en el texto. Usa mas o menos la misma cantidad de palabras del ejemplo modelo"
     )
     
     try:
