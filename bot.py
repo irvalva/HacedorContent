@@ -28,7 +28,7 @@ openai.api_key = OPENAI_API_KEY
 
 CONFIG_FILE = "config.json"
 
-# Funciones para cargar y guardar la configuración en JSON
+# Funciones de carga/guardado de configuración
 def cargar_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as file:
@@ -53,10 +53,7 @@ config = cargar_config()
 
 # --- Conversión de formato a HTML ---
 def utf16_offset_to_index(text: str, utf16_offset: int) -> int:
-    """
-    Convierte un offset (en UTF-16 code units) al índice correcto en la cadena de Python.
-    Telegram reporta los offsets basados en UTF-16.
-    """
+    """Convierte un offset (en UTF-16 code units) al índice correcto en la cadena."""
     count = 0
     for i, ch in enumerate(text):
         if ord(ch) >= 0x10000:
@@ -68,15 +65,10 @@ def utf16_offset_to_index(text: str, utf16_offset: int) -> int:
     return len(text)
 
 def convert_entities_to_html(message) -> str:
-    """
-    Reconstruye el texto formateado en HTML a partir de las entidades que envía Telegram.
-    Se ordenan las entidades (usando offsets convertidos) en orden inverso para no afectar los índices.
-    """
+    """Reconstruye el texto con formato en HTML según las entidades de Telegram."""
     if not message.entities:
         return message.text
-
     text = message.text
-    # Ordenamos de menor a mayor (según índice convertido)
     entities = sorted(message.entities, key=lambda ent: utf16_offset_to_index(text, ent.offset))
     for ent in reversed(entities):
         start = utf16_offset_to_index(text, ent.offset)
@@ -102,12 +94,10 @@ def convert_entities_to_html(message) -> str:
     return text
 
 def process_example_text(text: str) -> str:
-    """
-    Si el texto no tiene entidades, se asume que ya tiene el formato deseado (HTML) o se guarda tal cual.
-    """
+    """Si el texto viene sin entidades, se asume que ya tiene el formato deseado (HTML) o se guarda tal cual."""
     return text
 
-# --- Flujo de configuración inicial ---
+# --- Flujo de Configuración Inicial ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not config["configuracion"]["nombre"]:
         await update.message.reply_text(
@@ -123,15 +113,13 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     ejemplos = config["tipos_de_post"][tipo_post]["ejemplos"]
     if not ejemplos:
         return None, None
-
     indices_disponibles = list(range(len(ejemplos)))
     if previous_index is not None and len(ejemplos) > 1:
         indices_disponibles = [i for i in indices_disponibles if i != previous_index]
     elegido = random.choice(indices_disponibles)
     ejemplo_text = ejemplos[elegido]
-
-    # MODIFICADO: El prompt incluye instrucciones para que la respuesta FINAL
-    # contenga ÚNICAMENTE el contenido del post, sin detalles internos.
+    
+    # Prompt mejorado: usa la información de personalidad y servicios internamente, pero sólo muestra la etiqueta.
     prompt = (
         f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
         f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
@@ -157,7 +145,7 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"Habla como {config['configuracion']['nombre']}. No incluyas datos internos; responde solo con el contenido final."},
+                {"role": "system", "content": f"Adapta el estilo y tono según los datos internos, pero responde solo con el contenido final del post."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -176,11 +164,11 @@ async def presentar_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.effective_message.reply_text(post_text, reply_markup=reply_markup, parse_mode="HTML")
 
-# --- Manejo de mensajes según el estado ---
+# --- Manejo de Mensajes ---
 async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # Si se espera el tema para generar el post, tiene prioridad
+    # 1. Si se espera el tema para generar un post (modo creación activo)
     if context.user_data.get("esperando_post_tema"):
         tipo_post = context.user_data.get("tipo_post")
         tema = text
@@ -199,7 +187,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await presentar_post(update, context, post_text)
         return
 
-    # Si se espera un ejemplo para agregar
+    # 2. Si se espera un ejemplo para agregar a un tipo de post
     if context.user_data.get("esperando_ejemplo"):
         tipo_post = context.user_data.get("tipo_post")
         if not tipo_post:
@@ -220,7 +208,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("esperando_ejemplo", None)
         return
 
-    # Flujo de configuración del personaje
+    # 3. Flujo de configuración del personaje
     if context.user_data.get("esperando_nombre"):
         config["configuracion"]["nombre"] = text
         guardar_config(config)
@@ -261,7 +249,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("¡Configuración completada! Usa /menu para ver las opciones.", parse_mode="HTML")
         return
 
-    # Agregar Tipo de Post
+    # 4. Agregar Tipo de Post
     if context.user_data.get("esperando_tipo_post"):
         tipo_post = text.lower()
         if tipo_post in config["tipos_de_post"]:
@@ -273,7 +261,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.", parse_mode="HTML")
         return
 
-    # Edición de la configuración del personaje
+    # 5. Edición de la configuración del personaje
     if context.user_data.get("edit_nombre"):
         config["configuracion"]["nombre"] = text
         guardar_config(config)
@@ -310,7 +298,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Idioma actualizado.", parse_mode="HTML")
         return
 
-    # Edición de Tipo de Post (renombrar)
+    # 6. Edición de Tipo de Post (renombrar)
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
         if tipo_actual not in config["tipos_de_post"]:
@@ -323,7 +311,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"El tipo de post se ha renombrado a '{text}'.", parse_mode="HTML")
         return
 
-    # Edición de Ejemplo
+    # 7. Edición de Ejemplo
     if context.user_data.get("editar_ejemplo_indice") is not None:
         indice = context.user_data.get("editar_ejemplo_indice")
         tipo_post = context.user_data.get("tipo_editar")
@@ -336,6 +324,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("editar_ejemplo_indice")
         return
 
+    # Si no se reconoce la acción, se notifica
     await update.message.reply_text("No se reconoce la acción. Usa /menu para ver las opciones.", parse_mode="HTML")
 
 # --- Menú Principal ---
@@ -357,10 +346,12 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
+    # Crear Tipo de Post
     if data == "add_tipo_post":
         await query.message.reply_text("Escribe el nombre del nuevo tipo de post:", parse_mode="HTML")
         context.user_data["esperando_tipo_post"] = True
 
+    # Agregar Ejemplo
     elif data == "add_ejemplo":
         tipos = list(config["tipos_de_post"].keys())
         if not tipos:
@@ -376,6 +367,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["esperando_ejemplo"] = True
         await query.message.reply_text(f"Envíame un ejemplo para el tipo de post '{tipo_post}':", parse_mode="HTML")
 
+    # Crear Post (inicia el modo creación)
     elif data == "crear_post":
         tipos = list(config["tipos_de_post"].keys())
         if not tipos:
@@ -388,10 +380,14 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("post_"):
         tipo_post = data.split("_", 1)[1]
         context.user_data["tipo_post"] = tipo_post
+        context.user_data["modo_creacion"] = True
+        context.user_data["posts_creados"] = []  # inicializa la lista de posts creados
         context.user_data["esperando_post_tema"] = True
-        context.user_data.pop("esperando_ejemplo", None)
-        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':", parse_mode="HTML")
+        # Agrega un botón para terminar el modo de creación
+        keyboard = [[InlineKeyboardButton("Terminar", callback_data="terminar_post")]]
+        await query.message.reply_text(f"Escribe el tema para el post de tipo '{tipo_post}':", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
+    # Editar Configuración
     elif data == "editar_config":
         keyboard = [
             [InlineKeyboardButton("Nombre", callback_data="edit_nombre_menu")],
@@ -492,7 +488,6 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IndexError:
             await query.message.reply_text("Ejemplo no encontrado.", parse_mode="HTML")
             return
-        # Enviar mensaje separado para mostrar el ejemplo y luego preguntar
         await query.message.reply_text(f"Ejemplo seleccionado:\n{ejemplo}", parse_mode="HTML")
         keyboard = [
             [InlineKeyboardButton("Editar", callback_data=f"modificar_ejemplo_{indice}")],
@@ -516,16 +511,26 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IndexError:
             await query.message.reply_text("Error al borrar el ejemplo.", parse_mode="HTML")
 
+    # Aceptar Post en modo creación
     elif data == "aceptar_post":
         post = context.user_data.get("ultimo_post", "")
-        # El mensaje de "Post aceptado" se enviará separado.
-        await query.message.reply_text("Post aceptado:", parse_mode="HTML")
-        await query.message.reply_text(post, parse_mode="HTML")
+        if "posts_creados" not in context.user_data:
+            context.user_data["posts_creados"] = []
+        context.user_data["posts_creados"].append(post)
+        # Limpiar variables temporales de la generación actual
         context.user_data.pop("ultimo_post", None)
-        context.user_data.pop("ultimo_tipo_post", None)
-        context.user_data.pop("ultimo_tema", None)
         context.user_data.pop("ultimo_ejemplo_index", None)
+        # Mantener el tipo de post para la sesión
+        tipo_post = context.user_data.get("tipo_post")
+        await query.message.reply_text("Post guardado.", parse_mode="HTML")
+        # Pedir nuevo tema con botón para terminar
+        keyboard = [[InlineKeyboardButton("Terminar", callback_data="terminar_post")]]
+        await query.message.reply_text(
+            f"Ingresa el tema para el siguiente post de tipo '{tipo_post}':", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
+        )
+        context.user_data["esperando_post_tema"] = True
 
+    # Reescribir Post (genera nueva versión)
     elif data == "reescribir_post":
         tipo_post = context.user_data.get("ultimo_tipo_post")
         tema = context.user_data.get("ultimo_tema")
@@ -536,7 +541,21 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["ultimo_ejemplo_index"] = new_index
         await presentar_post(update, context, new_post)
 
-# --- Manejo adicional para editar textos (mensajes) ---
+    # Terminar el modo de creación de posts
+    elif data == "terminar_post":
+        context.user_data.pop("modo_creacion", None)
+        context.user_data.pop("esperando_post_tema", None)
+        tipo_post = context.user_data.pop("tipo_post", "N/A")
+        posts = context.user_data.pop("posts_creados", [])
+        if posts:
+            reply = "Has creado los siguientes posts:\n\n"
+            for i, p in enumerate(posts, start=1):
+                reply += f"{i}. {p}\n\n"
+        else:
+            reply = "No se creó ningún post."
+        await query.message.reply_text(reply, parse_mode="HTML")
+
+# --- Manejo adicional para editar textos (mensaje) ---
 async def editar_textos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
@@ -560,3 +579,4 @@ app.add_handler(CallbackQueryHandler(botones))
 
 logger.info("Bot en marcha...")
 app.run_polling()
+
