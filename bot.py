@@ -131,20 +131,21 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     ejemplo_text = ejemplos[elegido]
 
     prompt = (
-        f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
-        f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
-        f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo y extensión de texto similares, "
-        f"pero el contenido final debe ser 100% original y basado en el tema:\n\n"
-        f"{tema}\n\n"
-        f"Ejemplo (solo para inspirarte en cuanto a formato HTML y extensión de texto):\n{ejemplo_text}\n\n"
-        f"Usa internamente los siguientes datos para adaptar el tono de comunicacion y servicio que ofrece el personeje, "
-        f"pero **no los menciones directamente** en el post final:\n"
-        f"- Personalidad del personaje: {config['configuracion']['personalidad']}\n"
-        f"- Servicios o productos que ofrece: {', '.join(config['configuracion']['servicios'])}\n\n"
-        f"En el post, incorpora de forma natural la etiqueta \"{config['configuracion']['etiqueta']}\" en el llamado a la acción (CTA) y que el CTA sea corto.\n\n"
-        f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados o detalles internos "
-        f"(no muestres 'Tema:', 'Ejemplo:', 'Personalidad:' o 'Servicios:'). No uses hashtags ni puntos (.). "
-        f"El post debe basarse en la informacion que se brindo como tema (por ejemplo, si el tema es 'Hoy ganaremos', el texto debe mencionar que 'Hoy se ganará'."
+    f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
+    f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
+    f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo y extensión similares, "
+    f"pero el contenido final debe ser 100% original y adaptado a la idea principal que se proporciona a continuación.\n\n"
+    f"Idea principal (interpreta y corrige posibles errores ortográficos o de redacción):\n\"{tema}\"\n\n"
+    f"Ejemplo (solo para inspirarte en el formato y la extensión):\n{ejemplo_text}\n\n"
+    f"Utiliza internamente los siguientes datos para adaptar el tono y estilo, pero no los muestres directamente en el resultado final:\n"
+    f"- Personalidad del personaje: {config['configuracion']['personalidad']}\n"
+    f"- Servicios o productos que ofrece: {', '.join(config['configuracion']['servicios'])}\n\n"
+    f"En el post, incorpora de forma natural la etiqueta \"{config['configuracion']['etiqueta']}\" en el llamado a la acción (CTA), "
+    f"asegurándote de que el CTA sea breve.\n\n"
+    f"⚠️ **Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados ni detalles internos "
+    f"(no incluyas palabras como 'Idea principal:', 'Ejemplo:', 'Personalidad:' o 'Servicios:'). No uses hashtags ni puntos finales innecesarios. "
+    f"El post debe basarse en la idea proporcionada, interpretándola de forma coherente (por ejemplo, si la idea es 'Hoy ganaremos', "
+    f"el texto debe transmitir que 'hoy se ganará')."
     )
     
     try:
