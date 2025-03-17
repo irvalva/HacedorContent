@@ -133,18 +133,18 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     prompt = (
         f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
         f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
-        f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo, tono y extensión similares, "
+        f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo y extensión de texto similares, "
         f"pero el contenido final debe ser 100% original, basado y adaptado al tema:\n\n"
         f"\"{tema}\"\n\n"
-        f"Ejemplo (solo para inspirarte en cuanto a formato y extensión de texto):\n{ejemplo_text}\n\n"
-        f"Usa internamente los siguientes datos para adaptar el estilo y tono del mensaje, "
+        f"Ejemplo (solo para inspirarte en cuanto a formato HTML y extensión de texto):\n{ejemplo_text}\n\n"
+        f"Usa internamente los siguientes datos para adaptar el tono e idea del mensaje a transmitir, "
         f"pero **no los menciones directamente** en el post final:\n"
         f"- Personalidad del personaje: {config['configuracion']['personalidad']}\n"
         f"- Servicios o productos que ofrece: {', '.join(config['configuracion']['servicios'])}\n\n"
-        f"En el post, incorpora de forma natural la etiqueta \"{config['configuracion']['etiqueta']}\" en el llamado a la acción (CTA).\n\n"
+        f"En el post, incorpora de forma natural la etiqueta \"{config['configuracion']['etiqueta']}\" en el llamado a la acción (CTA) y que el CTA sea corto.\n\n"
         f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados o detalles internos "
         f"(no muestres 'Tema:', 'Ejemplo:', 'Personalidad:' o 'Servicios:'). No uses hashtags ni puntos (.). "
-        f"El post debe utilizar el tema de forma directa (por ejemplo, si el tema es 'Hoy ganaremos', el texto debe mencionar que 'Hoy se ganará')."
+        f"El post debe utilizar el tema de forma directa (por ejemplo, si el tema es 'Hoy ganaremos' o 'Oportunidad de oro', el texto debe mencionar que 'Hoy se ganará' o que 'Hay una oportunidad de oro')."
     )
     
     try:
