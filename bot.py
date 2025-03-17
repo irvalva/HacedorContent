@@ -130,34 +130,28 @@ async def generate_post(tipo_post: str, tema: str, idioma: str, previous_index: 
     elegido = random.choice(indices_disponibles)
     ejemplo_text = ejemplos[elegido]
 
-    # MODIFICADO: El prompt incluye instrucciones para que la respuesta FINAL
-    # contenga ÚNICAMENTE el contenido del post, sin detalles internos.
     prompt = (
         f"Genera un post para Telegram en {config['configuracion']['idioma']} utilizando HTML para el formato "
         f"(por ejemplo, <b> para negrita, <i> para cursiva, <u> para subrayado, etc.).\n"
         f"El post debe inspirarse en el siguiente ejemplo para mantener un estilo, tono y extensión similares, "
-        f"pero el contenido final debe ser 100% original, basado y adaptado al siguiente tema:\n\n"
+        f"pero el contenido final debe ser 100% original, basado y adaptado al tema:\n\n"
         f"\"{tema}\"\n\n"
-
         f"Ejemplo (solo para inspirarte en cuanto a formato y extensión de texto):\n{ejemplo_text}\n\n"
-
         f"Usa internamente los siguientes datos para adaptar el estilo y tono del mensaje, "
         f"pero **no los menciones directamente** en el post final:\n"
         f"- Personalidad del personaje: {config['configuracion']['personalidad']}\n"
         f"- Servicios o productos que ofrece: {', '.join(config['configuracion']['servicios'])}\n\n"
-
-        f"En el post incorpora de manera natural la etiqueta \"{config['configuracion']['etiqueta']}\" "
-        f"en el llamado a la acción (CTA).\n\n"
-
-        f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados, sin 'Tema:', "
-        f"sin 'Ejemplo:', sin 'Personalidad:' o 'Servicios:'. No uses hashtags ni puntos (.) en el texto. Usa mas o menos la misma cantidad de palabras del ejemplo modelo"
+        f"En el post, incorpora de forma natural la etiqueta \"{config['configuracion']['etiqueta']}\" en el llamado a la acción (CTA).\n\n"
+        f"**Importante:** Redacta únicamente el contenido final del post para Telegram, sin encabezados o detalles internos "
+        f"(no muestres 'Tema:', 'Ejemplo:', 'Personalidad:' o 'Servicios:'). No uses hashtags ni puntos (.). "
+        f"El post debe utilizar el tema de forma directa (por ejemplo, si el tema es 'Hoy ganaremos', el texto debe mencionar que 'Hoy se ganará')."
     )
     
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"Habla como {config['configuracion']['nombre']}. No incluyas datos internos; responde solo con el contenido final."},
+                {"role": "system", "content": f"Habla como {config['configuracion']['nombre']}. No incluyas datos internos; responde solo con el contenido final del post."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -216,7 +210,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         config["tipos_de_post"][tipo_post]["ejemplos"].append(processed_text)
         guardar_config(config)
-        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'. Puedes seguir agregando o usar /menu.", parse_mode="HTML")
+        await update.message.reply_text(f"Ejemplo agregado al tipo de post '{tipo_post}'.", parse_mode="HTML")
         context.user_data.pop("esperando_ejemplo", None)
         return
 
@@ -270,7 +264,7 @@ async def recibir_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config["tipos_de_post"][tipo_post] = {"ejemplos": []}
         guardar_config(config)
         context.user_data.pop("esperando_tipo_post")
-        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente. Usa /menu para más opciones.", parse_mode="HTML")
+        await update.message.reply_text(f"Tipo de post '{tipo_post}' agregado correctamente.", parse_mode="HTML")
         return
 
     # Edición de la configuración del personaje
@@ -492,7 +486,6 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IndexError:
             await query.message.reply_text("Ejemplo no encontrado.", parse_mode="HTML")
             return
-        # Enviar mensaje separado para mostrar el ejemplo y luego preguntar
         await query.message.reply_text(f"Ejemplo seleccionado:\n{ejemplo}", parse_mode="HTML")
         keyboard = [
             [InlineKeyboardButton("Editar", callback_data=f"modificar_ejemplo_{indice}")],
@@ -506,7 +499,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["editar_ejemplo_indice"] = indice
         await query.message.reply_text("Envía el nuevo texto para este ejemplo:", parse_mode="HTML")
 
-    elif data.startswith("borrar_ejemplo_"):
+    elif data.startswith("borrar_ejemplos_") or data.startswith("borrar_ejemplo_"):
         indice = int(data.split("_")[-1])
         tipo_post = context.user_data.get("tipo_editar")
         try:
@@ -516,15 +509,17 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IndexError:
             await query.message.reply_text("Error al borrar el ejemplo.", parse_mode="HTML")
 
+    # Aceptar Post: al aceptar, se muestran los mensajes finales y se muestra el menú
     elif data == "aceptar_post":
         post = context.user_data.get("ultimo_post", "")
-        # El mensaje de "Post aceptado" se enviará separado.
         await query.message.reply_text("Post aceptado:", parse_mode="HTML")
         await query.message.reply_text(post, parse_mode="HTML")
         context.user_data.pop("ultimo_post", None)
         context.user_data.pop("ultimo_tipo_post", None)
         context.user_data.pop("ultimo_tema", None)
         context.user_data.pop("ultimo_ejemplo_index", None)
+        # Mostrar el menú automáticamente
+        await menu(update, context)
 
     elif data == "reescribir_post":
         tipo_post = context.user_data.get("ultimo_tipo_post")
@@ -536,7 +531,7 @@ async def botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["ultimo_ejemplo_index"] = new_index
         await presentar_post(update, context, new_post)
 
-# --- Manejo adicional para editar textos (mensajes) ---
+# --- Manejo adicional para editar textos (mensaje) ---
 async def editar_textos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("edit_nombre_tipo"):
         tipo_actual = context.user_data.get("tipo_editar")
@@ -560,5 +555,3 @@ app.add_handler(CallbackQueryHandler(botones))
 
 logger.info("Bot en marcha...")
 app.run_polling()
-
-
